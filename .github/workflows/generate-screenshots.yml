@@ -22,7 +22,11 @@ on:
         required: false
         default: 'kkfive-action/private-screenshots'
         type: string
-      
+      custom_filename:
+        description: '自定义文件名（可选，不含扩展名）'
+        required: false
+        type: string
+
 
 permissions:
   contents: read
@@ -121,11 +125,18 @@ jobs:
       run: |
         echo "🎬 开始生成截图..."
 
-        # 从原始文件名中提取基础名称（不含扩展名）
-        VIDEO_FILENAME=$(echo "$ORIGINAL_FILENAME" | sed 's/\.[^.]*$//')
-        VIDEO_FILENAME=$(echo "$VIDEO_FILENAME" | sed 's/[^a-zA-Z0-9_-]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
+        # 确定使用的文件名
+        if [ -n "${{ inputs.custom_filename }}" ]; then
+          # 使用用户提供的自定义文件名
+          VIDEO_FILENAME="${{ inputs.custom_filename }}"
+          echo "📝 使用自定义文件名: $VIDEO_FILENAME"
+        else
+          # 从原始文件名中提取基础名称（不含扩展名）
+          VIDEO_FILENAME=$(echo "$ORIGINAL_FILENAME" | sed 's/\.[^.]*$//')
+          VIDEO_FILENAME=$(echo "$VIDEO_FILENAME" | sed 's/[^a-zA-Z0-9_-]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
+          echo "📝 自动提取的文件名: $VIDEO_FILENAME"
+        fi
 
-        echo "📝 视频文件名: $VIDEO_FILENAME"
         echo "VIDEO_FILENAME=$VIDEO_FILENAME" >> $GITHUB_ENV
 
         # 运行 shot-stitch Docker 容器，使用原始文件名
@@ -169,6 +180,9 @@ jobs:
         echo "# 视频截图文件" > release_notes.md
         echo "" >> release_notes.md
         echo "**视频文件名**: \`$VIDEO_FILENAME\`" >> release_notes.md
+        if [ -n "${{ inputs.custom_filename }}" ]; then
+          echo "**原始文件名**: \`$ORIGINAL_FILENAME\`" >> release_notes.md
+        fi
         echo "**预设模式**: \`${{ inputs.preset }}\`" >> release_notes.md
         echo "**目标仓库**: \`$TARGET_REPO\`" >> release_notes.md
         echo "**生成时间**: \`$(date '+%Y-%m-%d %H:%M:%S')\`" >> release_notes.md
