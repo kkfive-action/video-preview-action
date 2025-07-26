@@ -46,8 +46,25 @@ jobs:
           exit 1
         fi
         echo "✅ URL 验证通过"
+
+        # 验证自定义文件名（如果提供）
+        if [ -n "$CUSTOM_FILENAME" ]; then
+          # 检查是否包含不安全的字符
+          if [[ "$CUSTOM_FILENAME" =~ [<>:"|?*\/\\] ]]; then
+            echo "❌ 自定义文件名包含不安全的字符: $CUSTOM_FILENAME"
+            echo "请避免使用以下字符: < > : \" | ? * / \\"
+            exit 1
+          fi
+          # 检查长度
+          if [ ${#CUSTOM_FILENAME} -gt 100 ]; then
+            echo "❌ 自定义文件名过长（超过100字符）: $CUSTOM_FILENAME"
+            exit 1
+          fi
+          echo "✅ 自定义文件名验证通过: $CUSTOM_FILENAME"
+        fi
       env:
         VIDEO_URL: ${{ inputs.video_url }}
+        CUSTOM_FILENAME: ${{ inputs.custom_filename }}
     
     - name: 设置 Hosts 映射
       run: |
@@ -68,28 +85,14 @@ jobs:
         echo "⬇️ 正在获取视频资源..."
         echo "🔗 URL: $VIDEO_URL"
 
-        # 确定使用的文件名
-        if [ -n "${{ inputs.custom_filename }}" ]; then
-          # 使用自定义文件名，从原始URL提取扩展名
-          URL_FILENAME=$(echo "$VIDEO_URL" | sed 's/.*\///' | sed 's/\?.*$//')
-          if [[ "$URL_FILENAME" =~ \. ]]; then
-            EXTENSION="${URL_FILENAME##*.}"
-          else
-            EXTENSION="mp4"
-          fi
-          FINAL_FILENAME="${{ inputs.custom_filename }}.${EXTENSION}"
-          echo "📝 使用自定义文件名: $FINAL_FILENAME"
-          echo "📝 原始URL文件名: $URL_FILENAME"
-        else
-          # 从 URL 中提取原始文件名
-          FINAL_FILENAME=$(echo "$VIDEO_URL" | sed 's/.*\///' | sed 's/\?.*$//')
-          if [ -z "$FINAL_FILENAME" ] || [[ ! "$FINAL_FILENAME" =~ \. ]]; then
-            FINAL_FILENAME="video.mp4"
-          fi
-          echo "📝 自动提取的文件名: $FINAL_FILENAME"
+        # 从 URL 中提取原始文件名用于下载
+        ORIGINAL_FILENAME=$(echo "$VIDEO_URL" | sed 's/.*\///' | sed 's/\?.*$//')
+        if [ -z "$ORIGINAL_FILENAME" ] || [[ ! "$ORIGINAL_FILENAME" =~ \. ]]; then
+          ORIGINAL_FILENAME="video.mp4"
         fi
 
-        echo "FINAL_FILENAME=$FINAL_FILENAME" >> $GITHUB_ENV
+        echo "📝 原始文件名: $ORIGINAL_FILENAME"
+        echo "ORIGINAL_FILENAME=$ORIGINAL_FILENAME" >> $GITHUB_ENV
 
         # 首先获取文件信息
         echo "📊 获取文件信息..."
@@ -101,19 +104,19 @@ jobs:
           echo "⚠️ 无法获取文件大小信息"
         fi
 
-        # 使用 curl 下载到指定文件名
+        # 使用 curl 下载到原始文件名
         echo "⬇️ 开始下载..."
         if curl -L --fail --progress-bar \
                --connect-timeout 30 --max-time 3600 \
                --user-agent "Mozilla/5.0 (compatible; VideoProcessor/1.0)" \
-               --output "video_input/$FINAL_FILENAME" \
+               --output "video_input/$ORIGINAL_FILENAME" \
                --write-out "✅ 下载完成 - 实际大小: %{size_download} 字节 - 总用时: %{time_total}s - 平均速度: %{speed_download} B/s\n" \
                "$VIDEO_URL"; then
 
           # 验证文件并显示友好的大小
-          if [ -f "video_input/$FINAL_FILENAME" ] && [ -s "video_input/$FINAL_FILENAME" ]; then
-            FILE_SIZE=$(du -h "video_input/$FINAL_FILENAME" | cut -f1)
-            FILE_SIZE_BYTES=$(stat -c%s "video_input/$FINAL_FILENAME" 2>/dev/null || stat -f%z "video_input/$FINAL_FILENAME" 2>/dev/null)
+          if [ -f "video_input/$ORIGINAL_FILENAME" ] && [ -s "video_input/$ORIGINAL_FILENAME" ]; then
+            FILE_SIZE=$(du -h "video_input/$ORIGINAL_FILENAME" | cut -f1)
+            FILE_SIZE_BYTES=$(stat -c%s "video_input/$ORIGINAL_FILENAME" 2>/dev/null || stat -f%z "video_input/$ORIGINAL_FILENAME" 2>/dev/null)
             echo "📊 最终文件大小: ${FILE_SIZE} (${FILE_SIZE_BYTES} 字节)"
 
             # 验证文件完整性（如果有预期大小）
@@ -123,6 +126,36 @@ jobs:
               else
                 echo "⚠️ 文件大小不匹配 (预期: $CONTENT_LENGTH, 实际: $FILE_SIZE_BYTES)"
               fi
+            fi
+
+            # 如果提供了自定义文件名，重命名文件
+            if [ -n "${{ inputs.custom_filename }}" ]; then
+              # 从原始文件名提取扩展名
+              if [[ "$ORIGINAL_FILENAME" =~ \. ]]; then
+                EXTENSION="${ORIGINAL_FILENAME##*.}"
+              else
+                EXTENSION="mp4"
+              fi
+
+              NEW_FILENAME="${{ inputs.custom_filename }}.${EXTENSION}"
+              echo "🔄 重命名文件: $ORIGINAL_FILENAME → $NEW_FILENAME"
+
+              # 检查目标文件是否已存在
+              if [ -f "video_input/$NEW_FILENAME" ] && [ "$ORIGINAL_FILENAME" != "$NEW_FILENAME" ]; then
+                echo "⚠️ 目标文件名已存在，将覆盖: $NEW_FILENAME"
+              fi
+
+              mv "video_input/$ORIGINAL_FILENAME" "video_input/$NEW_FILENAME"
+
+              if [ -f "video_input/$NEW_FILENAME" ]; then
+                echo "✅ 文件重命名成功"
+                echo "FINAL_FILENAME=$NEW_FILENAME" >> $GITHUB_ENV
+              else
+                echo "❌ 文件重命名失败"
+                exit 1
+              fi
+            else
+              echo "FINAL_FILENAME=$ORIGINAL_FILENAME" >> $GITHUB_ENV
             fi
           else
             echo "❌ 下载的文件无效或为空"
@@ -141,9 +174,11 @@ jobs:
 
         # 从最终文件名中提取基础名称（不含扩展名）
         VIDEO_FILENAME=$(echo "$FINAL_FILENAME" | sed 's/\.[^.]*$//')
-        VIDEO_FILENAME=$(echo "$VIDEO_FILENAME" | sed 's/[^a-zA-Z0-9_-]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
+        # 注意：保持中文字符，只清理在文件系统中有问题的字符
+        VIDEO_FILENAME=$(echo "$VIDEO_FILENAME" | sed 's/[<>:"|?*\/\\]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
 
-        echo "📝 视频文件名: $VIDEO_FILENAME"
+        echo "📝 处理文件: $FINAL_FILENAME"
+        echo "📝 基础文件名: $VIDEO_FILENAME"
         echo "VIDEO_FILENAME=$VIDEO_FILENAME" >> $GITHUB_ENV
 
         # 运行 shot-stitch Docker 容器，使用最终文件名
@@ -187,6 +222,9 @@ jobs:
         echo "# 视频截图文件" > release_notes.md
         echo "" >> release_notes.md
         echo "**视频文件名**: \`$VIDEO_FILENAME\`" >> release_notes.md
+        if [ -n "${{ inputs.custom_filename }}" ]; then
+          echo "**原始URL文件名**: \`$ORIGINAL_FILENAME\`" >> release_notes.md
+        fi
         echo "**预设模式**: \`${{ inputs.preset }}\`" >> release_notes.md
         echo "**目标仓库**: \`$TARGET_REPO\`" >> release_notes.md
         echo "**生成时间**: \`$(date '+%Y-%m-%d %H:%M:%S')\`" >> release_notes.md
