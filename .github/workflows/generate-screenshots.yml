@@ -174,11 +174,8 @@ jobs:
         echo "**生成时间**: \`$(date '+%Y-%m-%d %H:%M:%S')\`" >> release_notes.md
         echo "" >> release_notes.md
         echo "## 包含文件" >> release_notes.md
-        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$ORIGINAL_FILENAME" | while read file; do
-          original_filename=$(basename "$file")
-
-          # 保持原始文件名，不进行重命名
-          echo "- \`$original_filename\` ($(du -h "$file" | cut -f1))" >> release_notes.md
+        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "video.mp4" | while read file; do
+          echo "- \`$(basename "$file")\` ($(du -h "$file" | cut -f1))" >> release_notes.md
         done
         echo "- \`${VIDEO_FILENAME}_all_files.zip\` (包含所有文件的压缩包)" >> release_notes.md
         echo "" >> release_notes.md
@@ -198,20 +195,14 @@ jobs:
           --notes-file release_notes.md
 
         echo "✅ Release 创建成功: $RELEASE_TAG"
-
-        # 创建临时目录用于重命名文件
-        mkdir -p temp_upload
-
-        # 上传所有截图文件（保持原始文件名）
+        
+        # 上传所有截图文件
         echo "📤 上传截图文件..."
-        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$ORIGINAL_FILENAME" | while read file; do
-          original_filename=$(basename "$file")
-
-          # 复制文件到临时目录，保持原始文件名
-          cp "$file" "temp_upload/$original_filename"
-          echo "📤 上传: $original_filename"
-
-          gh release upload "$RELEASE_TAG" "temp_upload/$original_filename" \
+        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "video.mp4" | while read file; do
+          filename=$(basename "$file")
+          echo "📤 上传: $filename"
+          
+          gh release upload "$RELEASE_TAG" "$file" \
             --repo "$TARGET_REPO" \
             --clobber
         done
@@ -247,9 +238,8 @@ jobs:
         echo "3. 直接下载需要的文件（无需解压）"
         echo ""
         echo "📊 可下载的文件:"
-        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$ORIGINAL_FILENAME" | while read file; do
-          original_filename=$(basename "$file")
-          echo "  - $original_filename ($(du -h "$file" | cut -f1))"
+        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "video.mp4" | while read file; do
+          echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
         done
         echo "  - ${VIDEO_FILENAME}_all_files.zip (包含所有文件的压缩包)"
         echo ""
