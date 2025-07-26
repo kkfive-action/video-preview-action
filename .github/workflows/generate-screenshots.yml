@@ -50,7 +50,7 @@ jobs:
         # 验证自定义文件名（如果提供）
         if [ -n "$CUSTOM_FILENAME" ]; then
           # 检查是否包含不安全的字符
-          if [[ "$CUSTOM_FILENAME" =~ [<>:"|?*\/\\] ]]; then
+          if [[ "$CUSTOM_FILENAME" =~ [\<\>\:\"\|\?\*\/\\] ]]; then
             echo "❌ 自定义文件名包含不安全的字符: $CUSTOM_FILENAME"
             echo "请避免使用以下字符: < > : \" | ? * / \\"
             exit 1
