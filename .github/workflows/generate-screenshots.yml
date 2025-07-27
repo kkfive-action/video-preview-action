@@ -483,5 +483,10 @@ jobs:
       if: always()
       run: |
         echo "🧹 清理临时文件..."
-        rm -rf video_input/ release_notes.md temp_previews/ temp_frames/
+        # 使用 sudo 来处理权限问题，Docker 创建的文件可能有不同的权限
+        sudo rm -rf video_input/ release_notes.md temp_previews/ temp_frames/ || {
+          echo "⚠️ 部分文件清理失败，尝试修改权限后重试..."
+          sudo chmod -R 777 video_input/ 2>/dev/null || true
+          sudo rm -rf video_input/ release_notes.md temp_previews/ temp_frames/ || true
+        }
         echo "✅ 清理完成"
