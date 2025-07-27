@@ -280,20 +280,12 @@ jobs:
         fi
     
     - name: 准备 Release 信息
+      env:
+        TZ: Asia/Shanghai
       run: |
-        # 定义查找生成文件的函数
-        find_generated_files() {
-          find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME"
-        }
-
-        # 定义查找小图片文件的函数
-        find_frame_files() {
-          find video_input/ -type f -path "*_frames/*" \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \)
-        }
-
-        TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+        TIMESTAMP=$(TZ="Asia/Shanghai" date +"%Y%m%d_%H%M%S")
         RELEASE_TAG="screenshots-${TIMESTAMP}"
-        RELEASE_NAME="$VIDEO_FILENAME 截图 - $(date '+%Y-%m-%d %H:%M:%S')"
+        RELEASE_NAME="$VIDEO_FILENAME 截图 - $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
         TARGET_REPO="${{ inputs.target_repo }}"
 
         echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
@@ -311,20 +303,51 @@ jobs:
         fi
         echo "**预设模式**: \`${{ inputs.preset }}\`" >> release_notes.md
         echo "**目标仓库**: \`$TARGET_REPO\`" >> release_notes.md
-        echo "**生成时间**: \`$(date '+%Y-%m-%d %H:%M:%S')\`" >> release_notes.md
+        echo "**生成时间**: \`$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')\`" >> release_notes.md
         echo "" >> release_notes.md
         echo "## 包含文件" >> release_notes.md
-        echo "### 主要文件" >> release_notes.md
-        find_generated_files | while read file; do
-          echo "- \`$(basename "$file")\` ($(du -h "$file" | cut -f1))" >> release_notes.md
+
+        # 收集预览图文件（与上传逻辑保持一致）
+        preview_files=()
+        while IFS= read -r -d '' file; do
+          filename=$(basename "$file")
+          if [ "$filename" != "$FINAL_FILENAME" ]; then
+            preview_files+=("$file")
+          fi
+        done < <(find video_input/ -maxdepth 1 -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) -print0 2>/dev/null)
+
+        # 添加预览图文件到release notes
+        if [ ${#preview_files[@]} -gt 0 ]; then
+          echo "### 预览图文件" >> release_notes.md
+          for file in "${preview_files[@]}"; do
+            echo "- \`$(basename "$file")\` ($(du -h "$file" | cut -f1))" >> release_notes.md
+          done
+          echo "" >> release_notes.md
+        fi
+
+        # 添加压缩包信息
+        echo "### 压缩包文件" >> release_notes.md
+
+        # 预览图压缩包
+        html_count=$(find video_input/ -maxdepth 1 -type f -name "*.html" | wc -l)
+        if [ ${#preview_files[@]} -gt 0 ] || [ $html_count -gt 0 ]; then
+          echo "- \`${VIDEO_FILENAME}_previews.zip\` (包含所有预览图和HTML报告)" >> release_notes.md
+        fi
+
+        # 小图压缩包（动态查找frames目录）
+        frames_dir=""
+        for dir in video_input/*_frames/; do
+          if [ -d "$dir" ]; then
+            frames_dir="$dir"
+            break
+          fi
         done
 
-        # 检查是否有小图片
-        FRAME_COUNT=$(find_frame_files | wc -l)
-        if [ "$FRAME_COUNT" -gt 0 ]; then
-          echo "" >> release_notes.md
-          echo "### 小图片文件" >> release_notes.md
-          echo "- \`${VIDEO_FILENAME}_frames.zip\` (包含 $FRAME_COUNT 张小图片的压缩包)" >> release_notes.md
+        if [ -n "$frames_dir" ] && [ -d "$frames_dir" ]; then
+          frame_count=$(find "$frames_dir" -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) | wc -l)
+          if [ $frame_count -gt 0 ]; then
+            echo "- \`${VIDEO_FILENAME}_frames.zip\` (包含 $frame_count 张小图)" >> release_notes.md
+          fi
         fi
 
         echo "" >> release_notes.md
@@ -368,15 +391,21 @@ jobs:
           html_files+=("$file")
         done < <(find video_input/ -maxdepth 1 -type f -name "*.html" -print0 2>/dev/null)
 
-        # 查找小图文件夹
-        frames_dir="video_input/${VIDEO_FILENAME}_frames"
+        # 动态查找小图文件夹（可能有不同的命名）
+        frames_dir=""
+        for dir in video_input/*_frames/; do
+          if [ -d "$dir" ]; then
+            frames_dir="$dir"
+            break
+          fi
+        done
 
         echo "📊 文件统计："
         echo "  - 预览图文件: ${#preview_files[@]} 个"
         echo "  - HTML文件: ${#html_files[@]} 个"
-        if [ -d "$frames_dir" ]; then
+        if [ -n "$frames_dir" ] && [ -d "$frames_dir" ]; then
           frame_count=$(find "$frames_dir" -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) | wc -l)
-          echo "  - 小图文件: $frame_count 个"
+          echo "  - 小图文件: $frame_count 个 (目录: $(basename "$frames_dir"))"
         else
           echo "  - 小图文件: 0 个（未找到frames目录）"
         fi
@@ -422,7 +451,7 @@ jobs:
         fi
 
         # 第四步：创建并上传小图压缩包
-        if [ -d "$frames_dir" ]; then
+        if [ -n "$frames_dir" ] && [ -d "$frames_dir" ]; then
           frame_files=($(find "$frames_dir" -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \)))
           if [ ${#frame_files[@]} -gt 0 ]; then
             echo "📦 创建小图压缩包..."
@@ -494,9 +523,16 @@ jobs:
           echo "  - ${VIDEO_FILENAME}_previews.zip"
         fi
 
-        # 显示小图压缩包（如果存在小图文件夹且有文件）
-        frames_dir="video_input/${VIDEO_FILENAME}_frames"
-        if [ -d "$frames_dir" ]; then
+        # 显示小图压缩包（动态查找frames目录）
+        frames_dir=""
+        for dir in video_input/*_frames/; do
+          if [ -d "$dir" ]; then
+            frames_dir="$dir"
+            break
+          fi
+        done
+
+        if [ -n "$frames_dir" ] && [ -d "$frames_dir" ]; then
           frame_count=$(find "$frames_dir" -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) | wc -l)
           if [ $frame_count -gt 0 ]; then
             echo "  - ${VIDEO_FILENAME}_frames.zip"
