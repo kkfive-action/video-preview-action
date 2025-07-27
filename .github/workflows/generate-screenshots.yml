@@ -187,18 +187,50 @@ jobs:
         # 注意：保持中文字符，只清理在文件系统中有问题的字符
         VIDEO_FILENAME=$(echo "$VIDEO_FILENAME" | sed 's/[<>:"|?*\/\\]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
 
+        # 为Docker容器创建ASCII安全的工作文件名（用于内部处理）
+        # 但保持原始文件名用于最终输出
+        DOCKER_SAFE_FILENAME=$(echo "$FINAL_FILENAME" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
+        if [ "$DOCKER_SAFE_FILENAME" != "$FINAL_FILENAME" ]; then
+          echo "📝 Docker安全文件名: $DOCKER_SAFE_FILENAME"
+          # 创建ASCII安全的符号链接
+          ln -sf "$FINAL_FILENAME" "video_input/$DOCKER_SAFE_FILENAME"
+        else
+          DOCKER_SAFE_FILENAME="$FINAL_FILENAME"
+        fi
+
         echo "📝 处理文件: $FINAL_FILENAME"
         echo "📝 基础文件名: $VIDEO_FILENAME"
         echo "VIDEO_FILENAME=$VIDEO_FILENAME" >> $GITHUB_ENV
 
-        # 运行 shot-stitch Docker 容器，使用最终文件名
+        # 运行 shot-stitch Docker 容器，使用ASCII安全的文件名
+        # 设置UTF-8环境变量以支持中文文件名
         docker run --rm \
+          -e LANG=C.UTF-8 \
+          -e LC_ALL=C.UTF-8 \
           -v $(pwd)/video_input:/data \
           dreamytzk/shot-stitch:latest \
-          "/data/$FINAL_FILENAME" \
+          "/data/$DOCKER_SAFE_FILENAME" \
           --preset ${{ inputs.preset }} \
           --html \
           --force
+
+        # 如果使用了ASCII安全文件名，需要重命名生成的文件
+        if [ "$DOCKER_SAFE_FILENAME" != "$FINAL_FILENAME" ]; then
+          echo "🔄 重命名生成的文件回中文文件名..."
+          DOCKER_SAFE_BASE=$(echo "$DOCKER_SAFE_FILENAME" | sed 's/\.[^.]*$//')
+
+          # 重命名所有生成的文件
+          for file in video_input/${DOCKER_SAFE_BASE}*; do
+            if [ -f "$file" ] && [ "$(basename "$file")" != "$DOCKER_SAFE_FILENAME" ]; then
+              new_name=$(echo "$(basename "$file")" | sed "s/^${DOCKER_SAFE_BASE}/${VIDEO_FILENAME}/")
+              mv "$file" "video_input/$new_name"
+              echo "  重命名: $(basename "$file") → $new_name"
+            fi
+          done
+
+          # 删除ASCII安全的符号链接
+          rm -f "video_input/$DOCKER_SAFE_FILENAME"
+        fi
 
         # 定义查找生成文件的命令（避免重复）
         FIND_GENERATED_FILES="find video_input/ -type f \( -name \"*.webp\" -o -name \"*.jpg\" -o -name \"*.png\" -o -name \"*.html\" \) ! -name \"$FINAL_FILENAME\""
