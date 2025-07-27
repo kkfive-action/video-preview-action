@@ -450,6 +450,11 @@ jobs:
         echo "2. 找到标签为 '$RELEASE_TAG' 的 Release"
         echo "3. 直接下载需要的文件（无需解压）"
         echo ""
+        # 定义查找小图片文件的函数
+        find_frame_files() {
+          find video_input/ -type f -path "*_frames/*" \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \)
+        }
+
         # 定义查找预览图文件的函数（排除小图片）
         find_preview_files() {
           find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) ! -name "$FINAL_FILENAME" ! -path "*_frames/*"
