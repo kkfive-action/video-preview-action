@@ -455,32 +455,25 @@ jobs:
           find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) ! -name "$FINAL_FILENAME" ! -path "*_frames/*"
         }
 
-        echo "📊 可下载的文件:"
+        echo "📊 发布的文件:"
 
-        # 显示单独上传的预览图
+        # 显示所有预览图文件
         preview_files=($(find_preview_files | sort))
-        if [ ${#preview_files[@]} -gt 0 ]; then
-          echo "### 🖼️ 预览图文件:"
-          preview_count=0
-          for file in "${preview_files[@]}"; do
-            filename=$(basename "$file")
-            size=$(du -h "$file" | cut -f1)
-            preview_count=$((preview_count + 1))
-            echo "  - 第${preview_count}张预览图: $filename ($size)"
-          done
-        fi
+        for file in "${preview_files[@]}"; do
+          filename=$(basename "$file")
+          size=$(du -h "$file" | cut -f1)
+          echo "  - $filename ($size)"
+        done
 
         # 显示预览图压缩包
         if [ ${#preview_files[@]} -gt 0 ]; then
-          echo "### 📦 预览图压缩包:"
-          echo "  - ${VIDEO_FILENAME}_previews.zip (包含 ${#preview_files[@]} 张预览图和HTML报告的压缩包)"
+          echo "  - ${VIDEO_FILENAME}_previews.zip (包含 ${#preview_files[@]} 张预览图和HTML报告)"
         fi
 
-        # 检查是否有小图片
+        # 显示小图片压缩包
         FRAME_COUNT=$(find_frame_files | wc -l)
         if [ "$FRAME_COUNT" -gt 0 ]; then
-          echo "### 📦 小图片压缩包:"
-          echo "  - ${VIDEO_FILENAME}_frames.zip (包含 $FRAME_COUNT 张小图片的压缩包)"
+          echo "  - ${VIDEO_FILENAME}_frames.zip (包含 $FRAME_COUNT 张小图片)"
         fi
 
         echo ""
