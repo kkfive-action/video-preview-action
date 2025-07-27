@@ -455,9 +455,9 @@ jobs:
           find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) ! -name "$FINAL_FILENAME" ! -path "*_frames/*"
         }
 
-        echo "📊 发布的文件:"
+        echo "📊 包含文件:"
 
-        # 显示所有预览图文件
+        # 显示所有预览图文件（实际发布的）
         preview_files=($(find_preview_files | sort))
         for file in "${preview_files[@]}"; do
           filename=$(basename "$file")
@@ -465,15 +465,15 @@ jobs:
           echo "  - $filename ($size)"
         done
 
-        # 显示预览图压缩包
+        # 显示预览图压缩包（实际发布的）
         if [ ${#preview_files[@]} -gt 0 ]; then
-          echo "  - ${VIDEO_FILENAME}_previews.zip (包含 ${#preview_files[@]} 张预览图和HTML报告)"
+          echo "  - ${VIDEO_FILENAME}_previews.zip"
         fi
 
-        # 显示小图片压缩包
+        # 显示小图片压缩包（实际发布的）
         FRAME_COUNT=$(find_frame_files | wc -l)
         if [ "$FRAME_COUNT" -gt 0 ]; then
-          echo "  - ${VIDEO_FILENAME}_frames.zip (包含 $FRAME_COUNT 张小图片)"
+          echo "  - ${VIDEO_FILENAME}_frames.zip"
         fi
 
         echo ""
