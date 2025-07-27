@@ -350,65 +350,103 @@ jobs:
 
         echo "✅ Release 创建成功: $RELEASE_TAG"
 
-        # 上传视频同目录下的所有预览图文件（排除原始视频文件）
-        echo "📤 上传预览图文件..."
-        preview_count=0
-        for file in video_input/*.{webp,jpg,png}; do
-          if [ -f "$file" ] && [ "$(basename "$file")" != "$FINAL_FILENAME" ]; then
+        # 第一步：收集所有文件信息
+        echo "� 分析生成的文件..."
+
+        # 查找预览图文件（video_input根目录下的图片，排除原始视频）
+        preview_files=()
+        while IFS= read -r -d '' file; do
+          filename=$(basename "$file")
+          if [ "$filename" != "$FINAL_FILENAME" ]; then
+            preview_files+=("$file")
+          fi
+        done < <(find video_input/ -maxdepth 1 -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) -print0 2>/dev/null)
+
+        # 查找HTML文件
+        html_files=()
+        while IFS= read -r -d '' file; do
+          html_files+=("$file")
+        done < <(find video_input/ -maxdepth 1 -type f -name "*.html" -print0 2>/dev/null)
+
+        # 查找小图文件夹
+        frames_dir="video_input/${VIDEO_FILENAME}_frames"
+
+        echo "📊 文件统计："
+        echo "  - 预览图文件: ${#preview_files[@]} 个"
+        echo "  - HTML文件: ${#html_files[@]} 个"
+        if [ -d "$frames_dir" ]; then
+          frame_count=$(find "$frames_dir" -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) | wc -l)
+          echo "  - 小图文件: $frame_count 个"
+        else
+          echo "  - 小图文件: 0 个（未找到frames目录）"
+        fi
+
+        # 第二步：上传预览图文件
+        if [ ${#preview_files[@]} -gt 0 ]; then
+          echo "📤 上传预览图文件..."
+          for i in "${!preview_files[@]}"; do
+            file="${preview_files[$i]}"
             filename=$(basename "$file")
-            preview_count=$((preview_count + 1))
-            echo "📤 上传第${preview_count}张预览图: $filename"
+            echo "📤 上传第$((i+1))张预览图: $filename"
 
             gh release upload "$RELEASE_TAG" "$file" \
               --repo "$TARGET_REPO" \
               --clobber
-          fi
-        done
+          done
+        fi
 
-        # 创建预览图压缩包（包含视频同目录下的所有图片和HTML文件）
-        echo "📦 创建预览图压缩包..."
-        mkdir -p temp_previews
+        # 第三步：创建并上传预览图压缩包
+        if [ ${#preview_files[@]} -gt 0 ] || [ ${#html_files[@]} -gt 0 ]; then
+          echo "📦 创建预览图压缩包..."
+          mkdir -p temp_previews
 
-        # 复制所有预览图到临时目录
-        for file in video_input/*.{webp,jpg,png,html}; do
-          if [ -f "$file" ] && [ "$(basename "$file")" != "$FINAL_FILENAME" ]; then
+          # 复制预览图文件
+          for file in "${preview_files[@]}"; do
             cp "$file" temp_previews/
-          fi
-        done
+          done
 
-        cd temp_previews
-        previews_zip_filename="${VIDEO_FILENAME}_previews.zip"
-        zip -r "$previews_zip_filename" .
-        echo "📤 上传预览图压缩包: $previews_zip_filename"
+          # 复制HTML文件
+          for file in "${html_files[@]}"; do
+            cp "$file" temp_previews/
+          done
 
-        gh release upload "$RELEASE_TAG" "$previews_zip_filename" \
-          --repo "$TARGET_REPO" \
-          --clobber
-        cd ..
+          cd temp_previews
+          previews_zip_filename="${VIDEO_FILENAME}_previews.zip"
+          zip -r "$previews_zip_filename" . >/dev/null
+          echo "📤 上传预览图压缩包: $previews_zip_filename"
 
-        # 检查是否有小图片文件夹
-        if [ -d "video_input/${VIDEO_FILENAME}_frames" ]; then
-          echo "📦 创建小图片压缩包..."
-          mkdir -p temp_frames
+          gh release upload "$RELEASE_TAG" "$previews_zip_filename" \
+            --repo "$TARGET_REPO" \
+            --clobber
+          cd ..
+        fi
 
-          # 复制小图片文件夹中的所有文件到临时目录
-          cp -r "video_input/${VIDEO_FILENAME}_frames"/* temp_frames/ 2>/dev/null || true
+        # 第四步：创建并上传小图压缩包
+        if [ -d "$frames_dir" ]; then
+          frame_files=($(find "$frames_dir" -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \)))
+          if [ ${#frame_files[@]} -gt 0 ]; then
+            echo "📦 创建小图压缩包..."
+            mkdir -p temp_frames
 
-          if [ "$(ls -A temp_frames 2>/dev/null)" ]; then
+            # 复制所有小图文件
+            for file in "${frame_files[@]}"; do
+              cp "$file" temp_frames/
+            done
+
             cd temp_frames
             frames_zip_filename="${VIDEO_FILENAME}_frames.zip"
-            zip -r "$frames_zip_filename" .
-            echo "📤 上传小图片压缩包: $frames_zip_filename"
+            zip -r "$frames_zip_filename" . >/dev/null
+            echo "📤 上传小图压缩包: $frames_zip_filename (包含 ${#frame_files[@]} 个文件)"
 
             gh release upload "$RELEASE_TAG" "$frames_zip_filename" \
               --repo "$TARGET_REPO" \
               --clobber
             cd ..
           else
-            echo "⚠️ 小图片文件夹为空，跳过小图片压缩包创建"
+            echo "ℹ️ 小图文件夹为空，跳过小图压缩包创建"
           fi
         else
-          echo "ℹ️ 未找到小图片文件夹，跳过小图片压缩包创建"
+          echo "ℹ️ 未找到小图文件夹，跳过小图压缩包创建"
         fi
 
         echo "✅ 所有文件上传完成"
@@ -433,25 +471,33 @@ jobs:
 
         echo "📊 包含文件:"
 
-        # 显示所有预览图文件（视频同目录下的图片文件）
-        preview_count=0
-        for file in video_input/*.{webp,jpg,png}; do
-          if [ -f "$file" ] && [ "$(basename "$file")" != "$FINAL_FILENAME" ]; then
-            filename=$(basename "$file")
-            size=$(du -h "$file" | cut -f1)
-            preview_count=$((preview_count + 1))
-            echo "  - $filename ($size)"
+        # 重新收集文件信息（与上传逻辑保持一致）
+        # 查找预览图文件
+        uploaded_preview_files=()
+        while IFS= read -r -d '' file; do
+          filename=$(basename "$file")
+          if [ "$filename" != "$FINAL_FILENAME" ]; then
+            uploaded_preview_files+=("$file")
           fi
+        done < <(find video_input/ -maxdepth 1 -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) -print0 2>/dev/null)
+
+        # 显示上传的预览图文件
+        for file in "${uploaded_preview_files[@]}"; do
+          filename=$(basename "$file")
+          size=$(du -h "$file" | cut -f1)
+          echo "  - $filename ($size)"
         done
 
-        # 显示预览图压缩包
-        if [ $preview_count -gt 0 ]; then
+        # 显示预览图压缩包（如果有预览图或HTML文件）
+        html_count=$(find video_input/ -maxdepth 1 -type f -name "*.html" | wc -l)
+        if [ ${#uploaded_preview_files[@]} -gt 0 ] || [ $html_count -gt 0 ]; then
           echo "  - ${VIDEO_FILENAME}_previews.zip"
         fi
 
-        # 显示小图片压缩包（如果存在小图片文件夹）
-        if [ -d "video_input/${VIDEO_FILENAME}_frames" ]; then
-          frame_count=$(find "video_input/${VIDEO_FILENAME}_frames" -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) | wc -l)
+        # 显示小图压缩包（如果存在小图文件夹且有文件）
+        frames_dir="video_input/${VIDEO_FILENAME}_frames"
+        if [ -d "$frames_dir" ]; then
+          frame_count=$(find "$frames_dir" -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) | wc -l)
           if [ $frame_count -gt 0 ]; then
             echo "  - ${VIDEO_FILENAME}_frames.zip"
           fi
