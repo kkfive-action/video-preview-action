@@ -315,7 +315,9 @@ jobs:
         mkdir -p temp_upload
 
         # 复制所有截图文件到临时目录
-        eval "$FIND_GENERATED_FILES" -exec cp {} temp_upload/ \;
+        eval "$FIND_GENERATED_FILES" | while read file; do
+          cp "$file" temp_upload/
+        done
 
         cd temp_upload
         zip_filename="${VIDEO_FILENAME}_all_files.zip"
